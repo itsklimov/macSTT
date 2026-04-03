@@ -401,11 +401,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         sttActor = actor
         settingsWindowController = SettingsWindowController(contentViewController: settingsViewController)
+        var checkForUpdatesAction: (@MainActor () -> Void)?
+        if updaterController != nil {
+            checkForUpdatesAction = { [weak self] in
+                guard let self else { return }
+                self.checkForUpdates(nil)
+            }
+        }
         statusItemController = StatusItemController(
             sttActor: actor,
             openAbout: { [weak self] in
                 self?.showAboutPanel(nil)
             },
+            checkForUpdates: checkForUpdatesAction,
             openSettings: { [weak self] in
                 self?.openSettings()
             }
@@ -428,6 +436,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let aboutItem = NSMenuItem(title: "About macSTT", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
         aboutItem.target = self
         appMenu.addItem(aboutItem)
+        if updaterController != nil {
+            let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+            updatesItem.target = self
+            appMenu.addItem(updatesItem)
+        }
         appMenu.addItem(withTitle: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit macSTT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -459,6 +472,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAboutPanel(_ sender: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: AppAboutPanel.options())
+    }
+
+    @objc private func checkForUpdates(_ sender: Any?) {
+        updaterController?.checkForUpdates(sender)
     }
 
     private func syncTriggerMonitor(with config: SttConfig) {

@@ -60,6 +60,7 @@ targets:
         SUFeedURL: $(SPARKLE_FEED_URL)
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
         SUEnableAutomaticChecks: YES
+        SUAutomaticallyUpdate: YES
     entitlements:
       path: Support/macSTT.entitlements
       properties:

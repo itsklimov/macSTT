@@ -169,7 +169,6 @@ private final class LaunchAtLoginMenuItemView: MenuRowView {
 @MainActor
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let sttActor: SttActor
-    private let openAbout: @MainActor () -> Void
     private let openSettings: @MainActor () -> Void
     private let logger = Logger(label: "com.wixfi.stt.app")
     private let isAppBundle = Bundle.main.bundlePath.hasSuffix(".app")
@@ -191,11 +190,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     init(
         sttActor: SttActor,
-        openAbout: @escaping @MainActor () -> Void,
         openSettings: @escaping @MainActor () -> Void
     ) {
         self.sttActor = sttActor
-        self.openAbout = openAbout
         self.openSettings = openSettings
         super.init()
         setupStatusItem()
@@ -249,16 +246,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusSummaryItem.isEnabled = false
         menu.addItem(statusSummaryItem)
         menu.addItem(.separator())
-
-        let aboutItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        let aboutItemView = MenuActionItemView(frame: NSRect(x: 0, y: 0, width: MenuRowMetrics.width, height: MenuRowMetrics.height))
-        aboutItemView.configure(icon: Self.makeMenuIcon(systemName: "info.circle"), title: "About macSTT")
-        aboutItemView.onActivate = { [weak self] in
-            self?.openAbout()
-        }
-        aboutItemView.update(isEnabled: true, toolTip: nil)
-        aboutItem.view = aboutItemView
-        menu.addItem(aboutItem)
 
         let launchAtLoginItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let launchAtLoginView = LaunchAtLoginMenuItemView(frame: NSRect(x: 0, y: 0, width: MenuRowMetrics.width, height: MenuRowMetrics.height))
