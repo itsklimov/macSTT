@@ -59,6 +59,7 @@ targets:
         MacSTTEnableSparkle: $(ENABLE_SPARKLE)
         SUFeedURL: $(SPARKLE_FEED_URL)
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SUEnableAutomaticChecks: YES
     entitlements:
       path: Support/macSTT.entitlements
       properties:

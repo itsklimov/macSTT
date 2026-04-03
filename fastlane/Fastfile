@@ -132,22 +132,18 @@ def ensure_sparkle_private_key!
   end
 end
 
-def fetch_appcast_branch(repository_path)
+def appcast_branch_exists?(repository_path)
   system(
-    "cd #{repository_path.shellescape} && git fetch origin #{APPCAST_BRANCH}:refs/remotes/origin/#{APPCAST_BRANCH}",
+    "cd #{repository_path.shellescape} && git ls-remote --exit-code --heads origin #{APPCAST_BRANCH}",
     out: File::NULL,
     err: File::NULL
   )
 end
 
-def appcast_branch_exists?(repository_path)
-  fetch_appcast_branch(repository_path)
-  system("cd #{repository_path.shellescape} && git show-ref --verify --quiet refs/remotes/origin/#{APPCAST_BRANCH}")
-end
-
 def checkout_appcast_branch(repository_path)
   if appcast_branch_exists?(repository_path)
-    sh("cd #{repository_path} && git checkout --track origin/#{APPCAST_BRANCH}")
+    sh("cd #{repository_path} && git fetch --depth 1 origin #{APPCAST_BRANCH}")
+    sh("cd #{repository_path} && git checkout -B #{APPCAST_BRANCH} FETCH_HEAD")
     return
   end
 
@@ -635,11 +631,7 @@ platform :mac do
 
     FileUtils.cp(File.join(feed_dir, "appcast.xml"), File.join(releases_dir, "appcast.xml"))
     FileUtils.cp(release_notes_path, File.join(releases_dir, release_notes_filename))
-    push_command = if appcast_branch_exists?(releases_dir)
-      "git push"
-    else
-      "git push --set-upstream origin #{APPCAST_BRANCH}"
-    end
+    push_command = "git push --set-upstream origin #{APPCAST_BRANCH}"
     sh("cd #{releases_dir} && git add appcast.xml #{release_notes_filename} && git commit -m 'Update appcast for #{tag} (build #{build_number})' && #{push_command}")
 
     FileUtils.rm_rf(releases_dir)
