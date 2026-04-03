@@ -1,0 +1,20 @@
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.DS_Store
+.vscode/
+Support/*
+!Support/Info.plist
+!Support/macSTT.entitlements
+build/
+.env*
+
+# Agent: build artifacts, dependencies, work-only adapter
+Agents/pm-agent/node_modules/
+Agents/pm-agent/dist/
+Agents/pm-agent/src/adapters/genai-bridge/
+fastlane/report.xml
+fastlane/README.md
+.releases-tmp/
