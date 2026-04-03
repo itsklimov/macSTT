@@ -268,6 +268,22 @@ enum SparkleSupport {
         return SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     }
 
+    @MainActor
+    static func performInitialUpdateCheckIfNeeded(_ updaterController: SPUStandardUpdaterController?) {
+        guard
+            let updaterController,
+            shouldPerformInitialUpdateCheck(automaticallyChecksForUpdates: updaterController.updater.automaticallyChecksForUpdates)
+        else {
+            return
+        }
+
+        updaterController.updater.checkForUpdatesInBackground()
+    }
+
+    static func shouldPerformInitialUpdateCheck(automaticallyChecksForUpdates: Bool) -> Bool {
+        automaticallyChecksForUpdates
+    }
+
     private static func sanitized(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
             return nil
@@ -288,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterController = SparkleSupport.makeUpdaterController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        SparkleSupport.performInitialUpdateCheckIfNeeded(updaterController)
         setupMainMenu()
         setupApplication()
         refreshPermissionState()

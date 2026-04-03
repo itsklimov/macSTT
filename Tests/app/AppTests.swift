@@ -118,3 +118,8 @@ import Testing
         ) == true
     )
 }
+
+@Test func sparkleSupportLaunchCheckRequiresAutomaticChecksEnabled() {
+    #expect(SparkleSupport.shouldPerformInitialUpdateCheck(automaticallyChecksForUpdates: true) == true)
+    #expect(SparkleSupport.shouldPerformInitialUpdateCheck(automaticallyChecksForUpdates: false) == false)
+}
