@@ -15,6 +15,7 @@ RELEASES_REPO = "itsklimov/macSTT"
 RELEASES_REPO_URL = "https://github.com/#{RELEASES_REPO}"
 APPCAST_BRANCH = "gh-pages"
 RELEASES_RAW_URL = "https://raw.githubusercontent.com/#{RELEASES_REPO}/#{APPCAST_BRANCH}"
+RELEASES_PAGES_URL = "https://itsklimov.github.io/macSTT"
 SPARKLE_BIN_DIRECTORIES = [
   File.join(ROOT, ".build", "artifacts", "sparkle", "Sparkle", "bin"),
   File.join(ROOT, ".build", "checkouts", "Sparkle", "bin"),
@@ -31,7 +32,7 @@ DMG_APPLICATIONS_ICON_POSITION = [490, 180].freeze
 DMG_BACKGROUND_SIZE = [640, 380].freeze
 APP_ICONSET_PATH = File.join(ROOT, "Sources", "macSTT", "Assets.xcassets", "AppIcon.appiconset")
 APP_ICON_FILENAME = "AppIcon.icns"
-OFFICIAL_SPARKLE_FEED_URL = "#{RELEASES_RAW_URL}/appcast.xml"
+OFFICIAL_SPARKLE_FEED_URL = "#{RELEASES_PAGES_URL}/appcast.xml"
 SPARKLE_KEYCHAIN_SERVICE = "https://sparkle-project.org"
 SPARKLE_KEYCHAIN_ACCOUNT = "ed25519"
 
@@ -481,7 +482,7 @@ def generate_appcast(archives_dir, tag)
   sh(
     sparkle_tool("generate_appcast"),
     "--download-url-prefix", "#{RELEASES_REPO_URL}/releases/download/#{tag}/",
-    "--release-notes-url-prefix", "#{RELEASES_RAW_URL}/",
+    "--release-notes-url-prefix", "#{RELEASES_PAGES_URL}/",
     "--full-release-notes-url", release_tag_url(tag),
     "--maximum-deltas", "0",
     "--maximum-versions", "0",
