@@ -401,19 +401,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         sttActor = actor
         settingsWindowController = SettingsWindowController(contentViewController: settingsViewController)
-        var checkForUpdatesAction: (@MainActor () -> Void)?
-        if updaterController != nil {
-            checkForUpdatesAction = { [weak self] in
-                guard let self else { return }
-                self.checkForUpdates(nil)
-            }
-        }
         statusItemController = StatusItemController(
             sttActor: actor,
-            openAbout: { [weak self] in
-                self?.showAboutPanel(nil)
-            },
-            checkForUpdates: checkForUpdatesAction,
             openSettings: { [weak self] in
                 self?.openSettings()
             }
