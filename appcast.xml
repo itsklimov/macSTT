@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>macSTT</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Fri, 03 Apr 2026 09:43:37 -0700</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/itsklimov/macSTT/releases/tag/v0.1.0</sparkle:fullReleaseNotesLink>
+            <sparkle:version>18</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://raw.githubusercontent.com/itsklimov/macSTT/gh-pages/macSTT-0.1.0.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/itsklimov/macSTT/releases/download/v0.1.0/macSTT-0.1.0.dmg" length="6135805" type="application/octet-stream" sparkle:edSignature="4DTWKwTeNXTEBGFzywB03KYPYnx5X7GkvFcHjHdEZ2lJ6U8FMTIMCs3yjLSw4+cuA5XGoxQD6rL9SgQSB+40Bg=="/>
+        </item>
+    </channel>
+</rss>
