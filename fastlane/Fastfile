@@ -79,6 +79,10 @@ def release_asset_name(version)
   "#{APP_NAME}-#{version}.dmg"
 end
 
+def latest_release_asset_name
+  "#{APP_NAME}.dmg"
+end
+
 def release_notes_name(version)
   "#{APP_NAME}-#{version}.md"
 end
@@ -576,6 +580,7 @@ platform :mac do
     tag = "v#{version}"
     build_number = current_build_number
     release_name = release_asset_name(version)
+    latest_release_name = latest_release_asset_name
     release_notes_filename = release_notes_name(version)
 
     ensure_sparkle_private_key!
@@ -583,10 +588,12 @@ platform :mac do
 
     app_path = app_bundle_path
     dmg_path = File.join(ROOT, "build", release_name)
+    latest_dmg_path = File.join(ROOT, "build", latest_release_name)
     releases_dir = File.join(ROOT, ".releases-tmp")
     feed_dir = File.join(ROOT, ".appcast-tmp")
 
     File.delete(dmg_path) if File.exist?(dmg_path)
+    File.delete(latest_dmg_path) if File.exist?(latest_dmg_path)
     FileUtils.rm_rf(releases_dir)
     FileUtils.rm_rf(feed_dir)
 
@@ -607,6 +614,7 @@ platform :mac do
       print_log: true
     )
     staple_and_validate(dmg_path, type: :dmg)
+    FileUtils.cp(dmg_path, latest_dmg_path)
 
     # Commit version bump to the source repo
     git_add = "project.yml"
@@ -615,7 +623,7 @@ platform :mac do
     sh("cd #{ROOT} && git push && git push --tags")
 
     # Upload release assets to the public repo
-    sh("gh", "release", "create", tag, dmg_path, "--repo", RELEASES_REPO, "--title", tag, "--generate-notes")
+    sh("gh", "release", "create", tag, dmg_path, latest_dmg_path, "--repo", RELEASES_REPO, "--title", tag, "--generate-notes")
 
     # Push appcast to the public repo without polluting the source branch
     sh("gh repo clone #{RELEASES_REPO} #{releases_dir} -- --depth 1")

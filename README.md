@@ -4,6 +4,8 @@ macOS-native speech-to-text app for dictation on macOS.
 
 The app listens for a configured trigger, captures microphone audio, runs local speech-to-text, and types the final transcript at the current cursor location.
 
+[Download the latest macSTT release](https://github.com/itsklimov/macSTT/releases/latest/download/macSTT.dmg)
+
 ## Requirements
 
 - macOS 15+
