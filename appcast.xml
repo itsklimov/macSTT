@@ -3,6 +3,16 @@
     <channel>
         <title>macSTT</title>
         <item>
+            <title>0.1.5</title>
+            <pubDate>Fri, 03 Apr 2026 10:33:46 -0700</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/itsklimov/macSTT/releases/tag/v0.1.5</sparkle:fullReleaseNotesLink>
+            <sparkle:version>23</sparkle:version>
+            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://raw.githubusercontent.com/itsklimov/macSTT/gh-pages/macSTT-0.1.5.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/itsklimov/macSTT/releases/download/v0.1.5/macSTT-0.1.5.dmg" length="6137241" type="application/octet-stream" sparkle:edSignature="581LQQbT1oYD48tI8Jg18MtAS3VmAYCkp0z6SeNiV76o3fSDmif90y5fmjz1oIuKqXEiopCobbswPgsKjFr7Ag=="/>
+        </item>
+        <item>
             <title>0.1.4</title>
             <pubDate>Fri, 03 Apr 2026 10:26:15 -0700</pubDate>
             <sparkle:fullReleaseNotesLink>https://github.com/itsklimov/macSTT/releases/tag/v0.1.4</sparkle:fullReleaseNotesLink>
