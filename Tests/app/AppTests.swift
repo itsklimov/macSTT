@@ -79,6 +79,18 @@ import Testing
     )
 }
 
+@Test @MainActor func appActivationPolicyUsesRegularModeForVisibleWindowsAndUpdates() {
+    #expect(
+        AppActivationPolicy.target(settingsWindowVisible: false, sparkleUpdateSessionActive: false) == .accessory
+    )
+    #expect(
+        AppActivationPolicy.target(settingsWindowVisible: true, sparkleUpdateSessionActive: false) == .regular
+    )
+    #expect(
+        AppActivationPolicy.target(settingsWindowVisible: false, sparkleUpdateSessionActive: true) == .regular
+    )
+}
+
 @Test func sparkleSupportStaysDisabledWithoutOfficialBuildSettings() {
     #expect(
         SparkleSupport.isEnabled(

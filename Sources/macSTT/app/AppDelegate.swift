@@ -1,6 +1,6 @@
 import AppKit
 import Logging
-import Sparkle
+@preconcurrency import Sparkle
 
 enum AppAboutPanel {
     static func options(bundle: Bundle = .main) -> [NSApplication.AboutPanelOptionKey: Any] {
@@ -242,6 +242,13 @@ enum AppLaunchBehavior {
     }
 }
 
+enum AppActivationPolicy {
+    @MainActor
+    static func target(settingsWindowVisible: Bool, sparkleUpdateSessionActive: Bool) -> NSApplication.ActivationPolicy {
+        (settingsWindowVisible || sparkleUpdateSessionActive) ? .regular : .accessory
+    }
+}
+
 enum SparkleSupport {
     static func isEnabled(bundle: Bundle = .main) -> Bool {
         isEnabled(infoDictionary: bundle.infoDictionary ?? [:])
@@ -260,12 +267,20 @@ enum SparkleSupport {
     }
 
     @MainActor
-    static func makeUpdaterController(bundle: Bundle = .main) -> SPUStandardUpdaterController? {
+    static func makeUpdaterController(
+        bundle: Bundle = .main,
+        updaterDelegate: SPUUpdaterDelegate? = nil,
+        userDriverDelegate: SPUStandardUserDriverDelegate? = nil
+    ) -> SPUStandardUpdaterController? {
         guard isEnabled(bundle: bundle) else {
             return nil
         }
 
-        return SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        return SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: updaterDelegate,
+            userDriverDelegate: userDriverDelegate
+        )
     }
 
     @MainActor
@@ -293,15 +308,50 @@ enum SparkleSupport {
     }
 }
 
+final class SparkleUserDriverDelegateProxy: NSObject, SPUStandardUserDriverDelegate {
+    private weak var appDelegate: AppDelegate?
+
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+    }
+
+    var supportsGentleScheduledUpdateReminders: Bool {
+        true
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(
+        _ handleShowingUpdate: Bool,
+        forUpdate update: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        guard handleShowingUpdate else { return }
+
+        Task { @MainActor [weak appDelegate] in
+            appDelegate?.handleSparkleWillShowUpdate(update)
+        }
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        Task { @MainActor [weak appDelegate] in
+            appDelegate?.handleSparkleDidFinishUpdateSession()
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sttActor: SttActor?
     private var settingsWindowController: SettingsWindowController?
     private var statusItemController: StatusItemController?
     private var triggerMonitor: TriggerMonitor?
+    private var sparkleUpdateSessionActive = false
 
     private let logger = Logger(label: "com.wixfi.stt.app")
-    private let updaterController = SparkleSupport.makeUpdaterController()
+    private lazy var sparkleUserDriverDelegate = SparkleUserDriverDelegateProxy(appDelegate: self)
+    private lazy var updaterController = SparkleSupport.makeUpdaterController(
+        updaterDelegate: nil,
+        userDriverDelegate: sparkleUserDriverDelegate
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SparkleSupport.performInitialUpdateCheckIfNeeded(updaterController)
@@ -450,5 +500,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.logger.error("Failed to switch STT language: \(error)")
             }
         }
+    }
+
+    fileprivate func handleSparkleWillShowUpdate(_ update: SUAppcastItem) {
+        sparkleUpdateSessionActive = true
+        syncActivationPolicy()
+        NSApp.activate(ignoringOtherApps: true)
+        logger.info("Presenting Sparkle update \(update.displayVersionString)")
+    }
+
+    fileprivate func handleSparkleDidFinishUpdateSession() {
+        sparkleUpdateSessionActive = false
+        syncActivationPolicy()
+    }
+
+    private func syncActivationPolicy() {
+        let targetPolicy = AppActivationPolicy.target(
+            settingsWindowVisible: settingsWindowController?.isVisible == true,
+            sparkleUpdateSessionActive: sparkleUpdateSessionActive
+        )
+        guard NSApp.activationPolicy() != targetPolicy else { return }
+        NSApp.setActivationPolicy(targetPolicy)
     }
 }

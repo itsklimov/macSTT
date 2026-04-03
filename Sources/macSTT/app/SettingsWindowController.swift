@@ -9,6 +9,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private let window: NSWindow
 
+    var isVisible: Bool {
+        window.isVisible
+    }
+
     init(contentViewController: NSViewController) {
         _ = contentViewController.view
 
@@ -44,7 +48,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func syncActivationPolicy() {
+    func syncActivationPolicy() {
         let targetPolicy: NSApplication.ActivationPolicy = window.isVisible ? .regular : .accessory
         guard NSApp.activationPolicy() != targetPolicy else { return }
         NSApp.setActivationPolicy(targetPolicy)
