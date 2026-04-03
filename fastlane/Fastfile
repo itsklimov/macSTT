@@ -32,6 +32,8 @@ DMG_BACKGROUND_SIZE = [640, 380].freeze
 APP_ICONSET_PATH = File.join(ROOT, "Sources", "macSTT", "Assets.xcassets", "AppIcon.appiconset")
 APP_ICON_FILENAME = "AppIcon.icns"
 OFFICIAL_SPARKLE_FEED_URL = "#{RELEASES_RAW_URL}/appcast.xml"
+SPARKLE_KEYCHAIN_SERVICE = "https://sparkle-project.org"
+SPARKLE_KEYCHAIN_ACCOUNT = "ed25519"
 
 def read_project_yml
   File.read(PROJECT_YML)
@@ -106,7 +108,40 @@ def build_xcargs(enable_sparkle:)
   arguments.join(" ")
 end
 
+def sparkle_keychain_present?
+  system(
+    "security",
+    "find-generic-password",
+    "-s", SPARKLE_KEYCHAIN_SERVICE,
+    "-a", SPARKLE_KEYCHAIN_ACCOUNT,
+    out: File::NULL,
+    err: File::NULL
+  )
+end
+
+def ensure_sparkle_private_key!
+  return if sparkle_keychain_present?
+
+  private_key = ENV["SPARKLE_PRIVATE_KEY"].to_s.strip
+  UI.user_error!("SPARKLE_PRIVATE_KEY not set and no Sparkle signing key found in login keychain") if private_key.empty?
+
+  Dir.mktmpdir("macstt-sparkle-private-key") do |dir|
+    key_path = File.join(dir, "sparkle_private_key")
+    File.write(key_path, private_key)
+    sh(sparkle_tool("generate_keys"), "-f", key_path)
+  end
+end
+
+def fetch_appcast_branch(repository_path)
+  system(
+    "cd #{repository_path.shellescape} && git fetch origin #{APPCAST_BRANCH}:refs/remotes/origin/#{APPCAST_BRANCH}",
+    out: File::NULL,
+    err: File::NULL
+  )
+end
+
 def appcast_branch_exists?(repository_path)
+  fetch_appcast_branch(repository_path)
   system("cd #{repository_path.shellescape} && git show-ref --verify --quiet refs/remotes/origin/#{APPCAST_BRANCH}")
 end
 
@@ -118,6 +153,16 @@ def checkout_appcast_branch(repository_path)
 
   sh("cd #{repository_path} && git checkout --orphan #{APPCAST_BRANCH}")
   sh("cd #{repository_path} && find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +")
+end
+
+def prune_appcast_branch_contents(repository_path)
+  Dir.children(repository_path).each do |entry|
+    next if entry == ".git"
+    next if entry == "appcast.xml"
+    next if entry.match?(/\A#{Regexp.escape(APP_NAME)}-\d+\.\d+\.\d+\.md\z/)
+
+    FileUtils.rm_rf(File.join(repository_path, entry))
+  end
 end
 
 def staple_and_validate(path, type:)
@@ -500,6 +545,11 @@ platform :mac do
     sh("open", dmg_path) if ENV["OPEN_DMG"] == "1"
   end
 
+  desc "Publish the current version without bumping"
+  lane :publish do
+    do_release(version: current_version)
+  end
+
   desc "Release: bump patch (0.0.x), build, notarize, dmg, publish"
   lane :release do
     version = bump_version(:patch)
@@ -531,6 +581,7 @@ platform :mac do
     release_name = release_asset_name(version)
     release_notes_filename = release_notes_name(version)
 
+    ensure_sparkle_private_key!
     build(enable_sparkle: true)
 
     app_path = app_bundle_path
@@ -572,6 +623,7 @@ platform :mac do
     # Push appcast to the public repo without polluting the source branch
     sh("gh repo clone #{RELEASES_REPO} #{releases_dir} -- --depth 1")
     checkout_appcast_branch(releases_dir)
+    prune_appcast_branch_contents(releases_dir)
     FileUtils.mkdir_p(feed_dir)
     existing_appcast = File.join(releases_dir, "appcast.xml")
     FileUtils.cp(existing_appcast, File.join(feed_dir, "appcast.xml")) if File.exist?(existing_appcast)

@@ -23,12 +23,19 @@ enum SyntheticTyping {
     static let insertionTapLocation: CGEventTapLocation = .cgAnnotatedSessionEventTap
     static let insertionSetsUnicodeOnKeyUp = false
 
+    static func hasAccessibilityPermission(
+        isTrusted: () -> Bool = { AXIsProcessTrusted() }
+    ) -> Bool {
+        isTrusted()
+    }
+
     static func promptAccessibilityPermission() {
-        _ = CGRequestPostEventAccess()
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     static func requireAccessibilityPermission(
-        isTrusted: () -> Bool = { CGPreflightPostEventAccess() },
+        isTrusted: () -> Bool = { hasAccessibilityPermission() },
         prompt: () -> Void = { promptAccessibilityPermission() }
     ) throws {
         guard isTrusted() else {

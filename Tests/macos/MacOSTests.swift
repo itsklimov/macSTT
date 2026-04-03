@@ -152,6 +152,11 @@ private final class AccessStateBox: @unchecked Sendable {
     #expect(thrownError == .accessibilityNotGranted)
 }
 
+@Test func syntheticTypingReportsGrantedAccessibilityWhenTrusted() {
+    #expect(SyntheticTyping.hasAccessibilityPermission(isTrusted: { true }) == true)
+    #expect(SyntheticTyping.hasAccessibilityPermission(isTrusted: { false }) == false)
+}
+
 @Test func syntheticTypingSplitsUtf16PayloadInto20CodeUnitChunks() {
     let chunks = SyntheticTyping.utf16Chunks(for: String(repeating: "a", count: 41))
 

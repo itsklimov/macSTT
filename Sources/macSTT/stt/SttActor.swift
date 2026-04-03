@@ -61,7 +61,7 @@ private enum PermissionAccess {
     }
 
     static func accessibilityStatus(defaults: UserDefaults = .standard) -> PermissionState {
-        if CGPreflightPostEventAccess() {
+        if SyntheticTyping.hasAccessibilityPermission() {
             return .granted
         }
 
