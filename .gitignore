@@ -18,3 +18,4 @@ Agents/pm-agent/src/adapters/genai-bridge/
 fastlane/report.xml
 fastlane/README.md
 .releases-tmp/
+.appcast-tmp/
