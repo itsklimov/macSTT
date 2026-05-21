@@ -110,7 +110,7 @@ private final class AccessStateBox: @unchecked Sendable {
     let monitor = TriggerMonitor(
         triggers: [.keyboard(keyCode: 126, modifiers: 0xC0000)],
         handler: {},
-        hasInputMonitoringAccess: { accessState.isGranted },
+        hasEventListeningAccess: { accessState.isGranted },
         createActivation: { _ in
             activationCount.value += 1
             return TriggerMonitor.Activation(

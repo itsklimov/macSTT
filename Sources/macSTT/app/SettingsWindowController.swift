@@ -2,10 +2,9 @@ import AppKit
 
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
-    private static let minimumWindowWidth: CGFloat = 440
-    private static let maximumWindowWidth: CGFloat = 480
-    private static let minimumWindowHeight: CGFloat = 360
-    private static let defaultWindowHeight: CGFloat = 460
+    static let fixedWindowWidth: CGFloat = 400
+    private static let minimumWindowHeight: CGFloat = 240
+    private static let defaultWindowHeight: CGFloat = 300
 
     private let window: NSWindow
 
@@ -23,8 +22,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "macSTT"
-        window.minSize = NSSize(width: Self.minimumWindowWidth, height: Self.minimumWindowHeight)
+        window.title = "Settings"
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        window.minSize = NSSize(width: Self.fixedWindowWidth, height: Self.minimumWindowHeight)
+        window.maxSize = NSSize(width: Self.fixedWindowWidth, height: .greatestFiniteMagnitude)
         window.isReleasedWhenClosed = false
         window.contentViewController = contentViewController
         self.window = window
@@ -59,21 +62,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             return NSRect(
                 x: 0,
                 y: 0,
-                width: minimumWindowWidth,
+                width: fixedWindowWidth,
                 height: defaultWindowHeight
             )
         }
 
-        let screenFrame = screen.visibleFrame
-        let maxWindowWidth = min(screenFrame.width / 3, maximumWindowWidth)
+        return initialWindowFrame(for: contentView, screenVisibleFrame: screen.visibleFrame)
+    }
+
+    static func initialWindowFrame(for contentView: NSView, screenVisibleFrame: NSRect) -> NSRect {
         let fittingSize = contentView.fittingSize
-        let contentWidth = max(minimumWindowWidth, min(maxWindowWidth, fittingSize.width))
-        let contentHeight = max(minimumWindowHeight, min(screenFrame.height * 0.75, fittingSize.height))
+        let contentHeight = max(minimumWindowHeight, min(screenVisibleFrame.height * 0.75, fittingSize.height))
 
         return NSRect(
-            x: screenFrame.maxX - contentWidth,
-            y: screenFrame.maxY - contentHeight - 40,
-            width: contentWidth,
+            x: screenVisibleFrame.maxX - fixedWindowWidth,
+            y: screenVisibleFrame.maxY - contentHeight - 40,
+            width: fixedWindowWidth,
             height: contentHeight
         )
     }

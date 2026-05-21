@@ -1,6 +1,17 @@
 import AppKit
+import ServiceManagement
 import Testing
 @testable import macSTT
+
+private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
+    let suiteName = "macSTTAppTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+    try body(defaults)
+}
 
 @Test @MainActor func appDelegateUsesMenuBarLifecycleDefaults() {
     let delegate = AppDelegate()
@@ -59,24 +70,111 @@ import Testing
 @Test func appLaunchBehaviorOpensSettingsWhenPermissionsAreMissing() {
     #expect(
         AppLaunchBehavior.shouldOpenSettingsOnLaunch(
-            for: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+            for: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            shouldShowReadyAfterPermissionRelaunch: false
         ) == false
     )
     #expect(
         AppLaunchBehavior.shouldOpenSettingsOnLaunch(
-            for: PermissionSnapshot(microphone: .notDetermined, inputMonitoring: .granted, accessibility: .granted)
+            for: PermissionSnapshot(microphone: .notDetermined, accessibility: .granted),
+            shouldShowReadyAfterPermissionRelaunch: false
         ) == true
     )
     #expect(
         AppLaunchBehavior.shouldOpenSettingsOnLaunch(
-            for: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .denied)
+            for: PermissionSnapshot(microphone: .granted, accessibility: .denied),
+            shouldShowReadyAfterPermissionRelaunch: false
         ) == true
     )
     #expect(
         AppLaunchBehavior.shouldOpenSettingsOnLaunch(
-            for: PermissionSnapshot(microphone: .granted, inputMonitoring: .denied, accessibility: .granted)
+            for: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            shouldShowReadyAfterPermissionRelaunch: true
         ) == true
     )
+}
+
+@Test func appLaunchBehaviorConsumesReadyAfterPermissionRelaunchFlag() {
+    withIsolatedDefaults { defaults in
+        #expect(AppLaunchBehavior.consumeReadyAfterPermissionRelaunch(defaults: defaults) == false)
+
+        AppLaunchBehavior.markReadyAfterPermissionRelaunch(defaults: defaults)
+
+        #expect(AppLaunchBehavior.consumeReadyAfterPermissionRelaunch(defaults: defaults) == true)
+        #expect(AppLaunchBehavior.consumeReadyAfterPermissionRelaunch(defaults: defaults) == false)
+    }
+}
+
+@Test func launchAtLoginPolicyRegistersOnlyAfterPermissionRelaunch() {
+    #expect(
+        LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: true,
+            status: .notRegistered,
+            didCompletePermissionRelaunch: true
+        ) == true
+    )
+    #expect(
+        LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: false,
+            status: .notRegistered,
+            didCompletePermissionRelaunch: true
+        ) == false
+    )
+    #expect(
+        LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: true,
+            status: .enabled,
+            didCompletePermissionRelaunch: true
+        ) == false
+    )
+    #expect(
+        LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: true,
+            status: .requiresApproval,
+            didCompletePermissionRelaunch: true
+        ) == false
+    )
+    #expect(
+        LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: true,
+            status: .notRegistered,
+            didCompletePermissionRelaunch: false
+        ) == false
+    )
+}
+
+@Test func permissionRelaunchPromptAppearsWhenVisiblePermissionsBecomeReady() {
+    #expect(
+        AppPermissionRelaunchPrompt.shouldPrompt(
+            previous: PermissionSnapshot(microphone: .granted, accessibility: .notDetermined),
+            current: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            hasAlreadyPrompted: false
+        ) == true
+    )
+    #expect(
+        AppPermissionRelaunchPrompt.shouldPrompt(
+            previous: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            current: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            hasAlreadyPrompted: false
+        ) == false
+    )
+    #expect(
+        AppPermissionRelaunchPrompt.shouldPrompt(
+            previous: PermissionSnapshot(microphone: .granted, accessibility: .notDetermined),
+            current: PermissionSnapshot(microphone: .granted, accessibility: .granted),
+            hasAlreadyPrompted: true
+        ) == false
+    )
+}
+
+@Test func appRelauncherBuildsWaitAndOpenScript() {
+    let script = AppRelauncher.relaunchScript(
+        bundlePath: "/Applications/mac'STT.app",
+        processIdentifier: 1234
+    )
+
+    #expect(script.contains("/bin/kill -0 1234"))
+    #expect(script.contains("/usr/bin/open -n '/Applications/mac'\\''STT.app'"))
 }
 
 @Test @MainActor func appActivationPolicyUsesRegularModeForVisibleWindowsAndUpdates() {
@@ -89,6 +187,19 @@ import Testing
     #expect(
         AppActivationPolicy.target(settingsWindowVisible: false, sparkleUpdateSessionActive: true) == .regular
     )
+}
+
+@Test @MainActor func settingsWindowUsesFixedWidth() {
+    let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 460))
+    let screenFrame = NSRect(x: 0, y: 0, width: 1600, height: 1000)
+
+    let windowFrame = SettingsWindowController.initialWindowFrame(
+        for: contentView,
+        screenVisibleFrame: screenFrame
+    )
+
+    #expect(windowFrame.width == 400)
+    #expect(windowFrame.width == SettingsWindowController.fixedWindowWidth)
 }
 
 @Test func sparkleSupportStaysDisabledWithoutOfficialBuildSettings() {

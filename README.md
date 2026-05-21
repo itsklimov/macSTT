@@ -80,7 +80,9 @@ fastlane mac release
 This flow bumps the version in `project.yml`, builds a signed `.app`, notarizes it with Apple, creates a DMG, publishes to GitHub Releases, and updates the Sparkle appcast on the `gh-pages` branch.
 
 Official release credentials are only needed for this path:
-`DEVELOPMENT_TEAM`, `FASTLANE_USER`, `APPLE_ID`, `FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD`, `SPARKLE_PUBLIC_ED_KEY`
+`DEVELOPMENT_TEAM`, `FASTLANE_USER`, `APPLE_ID`, `FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD`
+
+The official Sparkle public key is committed in `fastlane/Fastfile` because it is not secret and is embedded in every release build. Set `SPARKLE_PUBLIC_ED_KEY` only when intentionally overriding it. Set `RELEASE_NOTES_FILE` to publish curated GitHub release notes instead of generated notes.
 
 ## License
 

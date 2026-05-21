@@ -23,14 +23,14 @@ final class TriggerMonitor: @unchecked Sendable {
     fileprivate let handler: @Sendable () -> Void
     private let logger = Logger(label: "com.wixfi.stt.trigger-monitor")
     private let stateLock = NSLock()
-    private let hasInputMonitoringAccess: () -> Bool
+    private let hasEventListeningAccess: () -> Bool
     private let createActivation: (UnsafeMutableRawPointer?) -> Activation?
     private var state: State
 
     init(
         triggers: [TriggerBinding],
         handler: @escaping @Sendable () -> Void,
-        hasInputMonitoringAccess: @escaping () -> Bool = { CGPreflightListenEventAccess() },
+        hasEventListeningAccess: @escaping () -> Bool = { CGPreflightListenEventAccess() },
         createActivation: @escaping (UnsafeMutableRawPointer?) -> Activation? = { userInfo in
             let eventMask: CGEventMask =
                 (1 << CGEventType.keyDown.rawValue) |
@@ -64,7 +64,7 @@ final class TriggerMonitor: @unchecked Sendable {
     ) {
         self.state = State(triggers: triggers)
         self.handler = handler
-        self.hasInputMonitoringAccess = hasInputMonitoringAccess
+        self.hasEventListeningAccess = hasEventListeningAccess
         self.createActivation = createActivation
     }
 
@@ -82,8 +82,8 @@ final class TriggerMonitor: @unchecked Sendable {
             return true
         }
 
-        guard hasInputMonitoringAccess() else {
-            logger.error("Failed to create CGEvent tap — Input Monitoring permission is required")
+        guard hasEventListeningAccess() else {
+            logger.error("Failed to create CGEvent tap — event listening access is unavailable")
             return false
         }
 

@@ -37,6 +37,11 @@ final class TriggerRecorderView: NSView {
         setup()
     }
 
+    override var intrinsicContentSize: NSSize {
+        let fittingSize = pillStack.fittingSize
+        return NSSize(width: fittingSize.width, height: max(24, fittingSize.height))
+    }
+
     private func setup() {
         pillStack.orientation = .horizontal
         pillStack.spacing = 6
@@ -74,6 +79,7 @@ final class TriggerRecorderView: NSView {
         } else {
             pillStack.addArrangedSubview(addButton)
         }
+        invalidateIntrinsicContentSize()
     }
 
     private func makePill(for trigger: TriggerBinding, index: Int) -> NSView {

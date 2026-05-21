@@ -16,10 +16,6 @@ private enum StatusMenuSummary {
             return "Status: Transcript Recovery Required"
         }
 
-        if case .preparing(.loadingModels(_, _, _, let percent)) = status, percent >= 92 {
-            return "Status: Ready"
-        }
-
         return "Status: \(status.presentation.summaryText)"
     }
 }
@@ -32,6 +28,23 @@ private enum MenuRowMetrics {
     static let horizontalInset: CGFloat = 16
     static let verticalInset: CGFloat = 5
     static let spacing: CGFloat = 8
+}
+
+enum LaunchAtLoginRegistrationPolicy {
+    static func shouldRegisterAfterPermissionRelaunch(
+        isAppBundle: Bool,
+        status: SMAppService.Status,
+        didCompletePermissionRelaunch: Bool
+    ) -> Bool {
+        guard isAppBundle, didCompletePermissionRelaunch else { return false }
+
+        switch status {
+        case .notRegistered:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 @MainActor
@@ -183,7 +196,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var currentStatus: SttStatus = .idle(detail: "Waiting to prepare")
     private var currentPermissions = PermissionSnapshot(
         microphone: .notDetermined,
-        inputMonitoring: .notDetermined,
         accessibility: .notDetermined
     )
     private var currentPendingTranscript: PendingTranscript?
@@ -213,6 +225,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func refreshLaunchAtLoginState() {
         updateLaunchAtLoginMenuItem()
+    }
+
+    func enableLaunchAtLoginAfterPermissionRelaunchIfNeeded() {
+        guard LaunchAtLoginRegistrationPolicy.shouldRegisterAfterPermissionRelaunch(
+            isAppBundle: isAppBundle,
+            status: SMAppService.mainApp.status,
+            didCompletePermissionRelaunch: true
+        ) else {
+            updateLaunchAtLoginMenuItem()
+            return
+        }
+
+        setLaunchAtLoginEnabled(true, shouldOpenApprovalSettings: false)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -259,7 +284,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         let settingsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let settingsItemView = MenuActionItemView(frame: NSRect(x: 0, y: 0, width: MenuRowMetrics.width, height: MenuRowMetrics.height))
-        settingsItemView.configure(icon: Self.makeMenuIcon(systemName: "gearshape"), title: "Settings...")
+        settingsItemView.configure(icon: Self.makeMenuIcon(systemName: "gearshape"), title: "Settings…")
         settingsItemView.onActivate = { [weak self] in
             self?.openSettings()
         }
@@ -378,7 +403,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
+    private func setLaunchAtLoginEnabled(_ isEnabled: Bool, shouldOpenApprovalSettings: Bool = true) {
         do {
             if isEnabled {
                 try SMAppService.mainApp.register()
@@ -387,7 +412,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
 
             updateLaunchAtLoginMenuItem()
-            if SMAppService.mainApp.status == .requiresApproval {
+            if shouldOpenApprovalSettings, SMAppService.mainApp.status == .requiresApproval {
                 SMAppService.openSystemSettingsLoginItems()
             }
         } catch {

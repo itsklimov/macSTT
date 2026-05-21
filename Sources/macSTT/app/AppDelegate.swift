@@ -237,8 +237,68 @@ enum AppAboutPanel {
 }
 
 enum AppLaunchBehavior {
-    static func shouldOpenSettingsOnLaunch(for permissions: PermissionSnapshot) -> Bool {
-        permissions.requiresAttention
+    private static let showReadyAfterPermissionRelaunchKey = "app.showReadyAfterPermissionRelaunch"
+
+    static func shouldOpenSettingsOnLaunch(
+        for permissions: PermissionSnapshot,
+        shouldShowReadyAfterPermissionRelaunch: Bool
+    ) -> Bool {
+        shouldShowReadyAfterPermissionRelaunch || permissions.requiresAttention
+    }
+
+    static func markReadyAfterPermissionRelaunch(defaults: UserDefaults = .standard) {
+        defaults.set(true, forKey: showReadyAfterPermissionRelaunchKey)
+    }
+
+    static func consumeReadyAfterPermissionRelaunch(defaults: UserDefaults = .standard) -> Bool {
+        let shouldShow = defaults.bool(forKey: showReadyAfterPermissionRelaunchKey)
+        defaults.removeObject(forKey: showReadyAfterPermissionRelaunchKey)
+        return shouldShow
+    }
+}
+
+enum AppPermissionRelaunchPrompt {
+    static func shouldPrompt(
+        previous: PermissionSnapshot,
+        current: PermissionSnapshot,
+        hasAlreadyPrompted: Bool
+    ) -> Bool {
+        !hasAlreadyPrompted &&
+        !previous.allGranted &&
+        current.allGranted
+    }
+}
+
+enum AppRelauncher {
+    static func relaunchScript(bundlePath: String, processIdentifier: Int32) -> String {
+        """
+        while /bin/kill -0 \(processIdentifier) 2>/dev/null; do /bin/sleep 0.1; done
+        /usr/bin/open -n \(shellQuoted(bundlePath))
+        """
+    }
+
+    @MainActor
+    static func relaunch(
+        bundleURL: URL = Bundle.main.bundleURL,
+        processIdentifier: Int32 = ProcessInfo.processInfo.processIdentifier,
+        launchProcess: (URL, [String]) throws -> Void = { executableURL, arguments in
+            let process = Process()
+            process.executableURL = executableURL
+            process.arguments = arguments
+            try process.run()
+        },
+        terminate: () -> Void = { NSApp.terminate(nil) }
+    ) throws {
+        let script = relaunchScript(
+            bundlePath: bundleURL.path,
+            processIdentifier: processIdentifier
+        )
+        try launchProcess(URL(fileURLWithPath: "/bin/sh"), ["-c", script])
+        terminate()
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }
 
@@ -344,6 +404,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
     private var statusItemController: StatusItemController?
     private var triggerMonitor: TriggerMonitor?
+    private var permissionObserverTask: Task<Void, Never>?
+    private var permissionRelaunchPromptShown = false
     private var sparkleUpdateSessionActive = false
 
     private let logger = Logger(label: "com.wixfi.stt.app")
@@ -379,6 +441,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        permissionObserverTask?.cancel()
+        permissionObserverTask = nil
         statusItemController?.shutdown()
         stopTriggerMonitor()
         guard let actor = sttActor else { return }
@@ -407,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.openSettings()
             }
         )
+        startPermissionObserver(actor: actor)
 
         syncTriggerMonitor(with: config)
 
@@ -430,7 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updatesItem.target = self
             appMenu.addItem(updatesItem)
         }
-        appMenu.addItem(withTitle: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit macSTT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
@@ -442,7 +507,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let actor = sttActor else { return }
         Task { @MainActor [weak self, actor] in
             let permissions = await actor.currentPermissions
-            guard AppLaunchBehavior.shouldOpenSettingsOnLaunch(for: permissions) else { return }
+            let shouldShowReadyAfterPermissionRelaunch = AppLaunchBehavior.consumeReadyAfterPermissionRelaunch()
+            if shouldShowReadyAfterPermissionRelaunch, permissions.allGranted {
+                self?.statusItemController?.enableLaunchAtLoginAfterPermissionRelaunchIfNeeded()
+            }
+            guard AppLaunchBehavior.shouldOpenSettingsOnLaunch(
+                for: permissions,
+                shouldShowReadyAfterPermissionRelaunch: shouldShowReadyAfterPermissionRelaunch
+            ) else { return }
             self?.openSettings()
         }
     }
@@ -488,6 +560,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         _ = monitor.start()
         triggerMonitor = monitor
+    }
+
+    private func startPermissionObserver(actor: SttActor) {
+        permissionObserverTask?.cancel()
+        permissionObserverTask = Task { @MainActor [weak self, actor] in
+            var previousPermissions = await actor.currentPermissions
+
+            for await permissions in actor.permissionUpdates {
+                guard !Task.isCancelled else { break }
+                let shouldPromptForRelaunch = AppPermissionRelaunchPrompt.shouldPrompt(
+                    previous: previousPermissions,
+                    current: permissions,
+                    hasAlreadyPrompted: self?.permissionRelaunchPromptShown == true
+                )
+                previousPermissions = permissions
+
+                self?.syncTriggerMonitor(with: SttConfig.load())
+                if shouldPromptForRelaunch {
+                    self?.permissionRelaunchPromptShown = true
+                    self?.presentPermissionRelaunchPrompt()
+                }
+            }
+        }
+    }
+
+    private func presentPermissionRelaunchPrompt() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Restart macSTT?"
+        alert.informativeText = "macOS applies Accessibility changes to global shortcuts after the app restarts."
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Later")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            AppLaunchBehavior.markReadyAfterPermissionRelaunch()
+            try AppRelauncher.relaunch()
+        } catch {
+            logger.error("Failed to relaunch after permission grant: \(error)")
+        }
     }
 
     private func stopTriggerMonitor() {

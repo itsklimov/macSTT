@@ -1,4 +1,3 @@
-@preconcurrency import ApplicationServices
 @preconcurrency import AVFoundation
 import CoreAudio
 @preconcurrency import CoreML
@@ -35,14 +34,12 @@ enum CaptureToggleResult: Sendable, Equatable {
     case ignored
 }
 
-private enum PermissionAccess {
-    private static let inputMonitoringPromptedKey = "stt.inputMonitoringPrompted"
+enum PermissionAccess {
     private static let accessibilityPromptedKey = "stt.accessibilityPrompted"
 
     static func snapshot(defaults: UserDefaults = .standard) -> PermissionSnapshot {
         PermissionSnapshot(
             microphone: microphoneStatus(),
-            inputMonitoring: inputMonitoringStatus(defaults: defaults),
             accessibility: accessibilityStatus(defaults: defaults)
         )
     }
@@ -68,19 +65,6 @@ private enum PermissionAccess {
         return defaults.bool(forKey: accessibilityPromptedKey) ? .denied : .notDetermined
     }
 
-    static func inputMonitoringStatus(defaults: UserDefaults = .standard) -> PermissionState {
-        if CGPreflightListenEventAccess() {
-            return .granted
-        }
-
-        return defaults.bool(forKey: inputMonitoringPromptedKey) ? .denied : .notDetermined
-    }
-
-    static func promptInputMonitoring(defaults: UserDefaults = .standard) {
-        defaults.set(true, forKey: inputMonitoringPromptedKey)
-        _ = CGRequestListenEventAccess()
-    }
-
     static func promptAccessibility(defaults: UserDefaults = .standard) {
         defaults.set(true, forKey: accessibilityPromptedKey)
         SyntheticTyping.promptAccessibilityPermission()
@@ -90,7 +74,6 @@ private enum PermissionAccess {
 struct SttEnvironment: Sendable {
     var permissionSnapshot: @Sendable () -> PermissionSnapshot
     var requestMicrophonePermission: @Sendable () async -> Bool
-    var promptInputMonitoringPermission: @Sendable () -> Void
     var promptAccessibilityPermission: @Sendable () -> Void
     var typeTextAtCursor: @Sendable (String) throws -> Void
     var loadPendingTranscript: @Sendable () -> PendingTranscript?
@@ -106,7 +89,6 @@ struct SttEnvironment: Sendable {
                 }
             }
         },
-        promptInputMonitoringPermission: { PermissionAccess.promptInputMonitoring() },
         promptAccessibilityPermission: { PermissionAccess.promptAccessibility() },
         typeTextAtCursor: { try SyntheticTyping.typeAtCursor($0) },
         loadPendingTranscript: { PendingTranscriptStore.load() },
@@ -325,11 +307,6 @@ actor SttActor {
         return refreshPermissionState()
     }
 
-    func promptInputMonitoringPermission() -> PermissionSnapshot {
-        environment.promptInputMonitoringPermission()
-        return refreshPermissionState()
-    }
-
     func promptAccessibilityPermission() -> PermissionSnapshot {
         environment.promptAccessibilityPermission()
         return refreshPermissionState()
@@ -384,7 +361,7 @@ actor SttActor {
         let permissionSnapshot = refreshPermissionState()
         guard permissionSnapshot.allGranted else {
             logger.info(
-                "Permissions missing, capture blocked: mic=\(permissionSnapshot.microphone.rawValue) input=\(permissionSnapshot.inputMonitoring.rawValue) ax=\(permissionSnapshot.accessibility.rawValue)"
+                "Permissions missing, capture blocked: mic=\(permissionSnapshot.microphone.rawValue) ax=\(permissionSnapshot.accessibility.rawValue)"
             )
             feedbackSoundPlayer.play(.captureRejected)
             return .blockedByPermissions

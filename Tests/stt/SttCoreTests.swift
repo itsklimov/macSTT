@@ -7,7 +7,6 @@ private let testDefaultsKeys = [
     "stt.triggers",
     "stt.mouseButton",
     "stt.pendingTranscript",
-    "stt.inputMonitoringPrompted",
     "stt.accessibilityPrompted",
 ]
 
@@ -160,6 +159,21 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
     #expect(PermissionState.denied.displayName == "Denied")
 }
 
+@Test func permissionSnapshotRequiresVisiblePermissions() {
+    #expect(
+        PermissionSnapshot(
+            microphone: .granted,
+            accessibility: .granted
+        ).allGranted == true
+    )
+    #expect(
+        PermissionSnapshot(
+            microphone: .granted,
+            accessibility: .denied
+        ).allGranted == false
+    )
+}
+
 @Test func sttStatusPresentationFormatsDownloadProgress() {
     let presentation = SttStatus.preparing(
         .downloadingModels(language: .english, completedFiles: 2, totalFiles: 5)
@@ -198,13 +212,12 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorBlocksCaptureWhenPermissionsAreMissing() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .denied)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .denied)
     )
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { false },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { _ in },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -220,13 +233,12 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorTriggerToggleReportsBlockedPermissions() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .denied)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .denied)
     )
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { false },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { _ in },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -242,13 +254,12 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorStoresPendingTranscriptWhenTypingFails() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { _ in throw SyntheticTypingError.accessibilityNotGranted },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -274,14 +285,13 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorBatchFinalizeTranscribesCapturedSamplesOnce() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let transcriptionBox = BatchTranscriptionBox(result: .success("Batch transcript"))
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { environmentBox.recordTypedText($0) },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -304,14 +314,13 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorBatchFinalizesShortRecordingsWhenAudioExists() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let transcriptionBox = BatchTranscriptionBox(result: .success("Short transcript"))
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { environmentBox.recordTypedText($0) },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -334,14 +343,13 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorSkipsBatchTranscriptionWhenNoAudioWasCaptured() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let transcriptionBox = BatchTranscriptionBox(result: .success("Should not run"))
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { environmentBox.recordTypedText($0) },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -362,14 +370,13 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorStoresPendingTranscriptWhenBatchTypingFails() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let transcriptionBox = BatchTranscriptionBox(result: .success("Recovered transcript"))
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { _ in throw SyntheticTypingError.accessibilityNotGranted },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },
@@ -396,14 +403,13 @@ private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrow
 
 @Test func sttActorRetainsCapturedSamplesAcrossInternalRestart() async {
     let environmentBox = SttEnvironmentBox(
-        snapshot: PermissionSnapshot(microphone: .granted, inputMonitoring: .granted, accessibility: .granted)
+        snapshot: PermissionSnapshot(microphone: .granted, accessibility: .granted)
     )
     let transcriptionBox = BatchTranscriptionBox(result: .success("Restarted transcript"))
     let actor = SttActor(
         environment: SttEnvironment(
             permissionSnapshot: { environmentBox.currentSnapshot() },
             requestMicrophonePermission: { true },
-            promptInputMonitoringPermission: {},
             promptAccessibilityPermission: {},
             typeTextAtCursor: { environmentBox.recordTypedText($0) },
             loadPendingTranscript: { environmentBox.loadPendingTranscript() },

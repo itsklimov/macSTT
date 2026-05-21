@@ -3,6 +3,17 @@ import Logging
 
 @MainActor
 final class SettingsViewController: NSViewController {
+    private static let contentWidth: CGFloat = 400
+    private static let rootInset: CGFloat = 16
+    private static let groupWidth: CGFloat = contentWidth - (rootInset * 2)
+    private static let rowHorizontalInset: CGFloat = 12
+    private static let headerIconWidth: CGFloat = 18
+    private static let labelColumnWidth: CGFloat = 108
+    private static let valueColumnWidth: CGFloat = 196
+    private static let progressWidth: CGFloat = 196
+    private static let activePermissionRefreshInterval: Duration = .milliseconds(500)
+    private static let idlePermissionRefreshInterval: Duration = .seconds(2)
+
     var onConfigChanged: ((SttConfig) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
 
@@ -10,26 +21,30 @@ final class SettingsViewController: NSViewController {
     private let triggerRecorder: TriggerRecorderView
     private var statusTask: Task<Void, Never>?
     private var permissionTask: Task<Void, Never>?
+    private var permissionRefreshTask: Task<Void, Never>?
     private var pendingTranscriptTask: Task<Void, Never>?
     private let logger = Logger(label: "com.wixfi.stt.settings")
     private var config: SttConfig
+    private var currentStatus = SttStatus.idle(detail: "Waiting to prepare")
+    private var currentPermissions = PermissionSnapshot(
+        microphone: .notDetermined,
+        accessibility: .notDetermined
+    )
 
-    private let englishRadio = NSButton(
-        radioButtonWithTitle: "English",
-        target: nil, action: nil
+    private let languageControl = NSSegmentedControl(
+        labels: ["English", "Multilingual"],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
     )
-    private let multilingualRadio = NSButton(
-        radioButtonWithTitle: "Multilingual",
-        target: nil, action: nil
-    )
-    private let statusLabel = NSTextField(wrappingLabelWithString: "Status: Initializing")
+    private let statusLabel = NSTextField(labelWithString: "Initializing")
+    private let statusDetailLabel = NSTextField(wrappingLabelWithString: "")
+    private let statusValueStack = NSStackView()
     private let statusProgressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(labelWithString: "")
     private let microphoneStateLabel = NSTextField(labelWithString: "Checking…")
-    private let inputMonitoringStateLabel = NSTextField(labelWithString: "Checking…")
     private let accessibilityStateLabel = NSTextField(labelWithString: "Checking…")
     private let microphoneActionButton = NSButton(title: "", target: nil, action: nil)
-    private let inputMonitoringActionButton = NSButton(title: "", target: nil, action: nil)
     private let accessibilityActionButton = NSButton(title: "", target: nil, action: nil)
     private let recoveryContainer = NSStackView()
     private let recoveryReasonLabel = NSTextField(wrappingLabelWithString: "")
@@ -49,23 +64,24 @@ final class SettingsViewController: NSViewController {
     override func loadView() {
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        stack.alignment = .width
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(
+            top: Self.rootInset,
+            left: Self.rootInset,
+            bottom: Self.rootInset,
+            right: Self.rootInset
+        )
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
 
-        englishRadio.state = config.language == .english ? .on : .off
-        englishRadio.target = self
-        englishRadio.action = #selector(languageChanged)
-
-        multilingualRadio.state = config.language == .multilingual ? .on : .off
-        multilingualRadio.target = self
-        multilingualRadio.action = #selector(languageChanged)
-
-        let languageLabel = NSTextField(labelWithString: "Language:")
-        languageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-
-        let triggerLabel = NSTextField(labelWithString: "Trigger:")
-        triggerLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        languageControl.selectedSegment = config.language == .english ? 0 : 1
+        languageControl.target = self
+        languageControl.action = #selector(languageChanged)
+        languageControl.segmentStyle = .rounded
+        languageControl.controlSize = .small
+        languageControl.setWidth(76, forSegment: 0)
+        languageControl.setWidth(108, forSegment: 1)
 
         triggerRecorder.onTriggerChanged = { [weak self] in
             self?.handleTriggerChanged()
@@ -74,32 +90,28 @@ final class SettingsViewController: NSViewController {
             self?.onRecordingChanged?(recording)
         }
 
-        let triggerRow = NSStackView(views: [triggerLabel, triggerRecorder])
-        triggerRow.orientation = .horizontal
-        triggerRow.spacing = 8
-
-        let permissionsLabel = NSTextField(labelWithString: "Permissions:")
-        permissionsLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-
         microphoneActionButton.target = self
         microphoneActionButton.action = #selector(microphonePermissionAction)
-        inputMonitoringActionButton.target = self
-        inputMonitoringActionButton.action = #selector(inputMonitoringPermissionAction)
         accessibilityActionButton.target = self
         accessibilityActionButton.action = #selector(accessibilityPermissionAction)
 
-        let permissionsSeparator = NSBox()
-        permissionsSeparator.boxType = .separator
-
-        let modelSeparator = NSBox()
-        modelSeparator.boxType = .separator
-
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        statusLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         statusLabel.textColor = .labelColor
-        statusLabel.maximumNumberOfLines = 0
-        configureMetadataLabel(microphoneStateLabel)
-        configureMetadataLabel(inputMonitoringStateLabel)
-        configureMetadataLabel(accessibilityStateLabel)
+        statusLabel.alignment = .right
+        statusLabel.lineBreakMode = .byTruncatingTail
+
+        statusDetailLabel.font = .systemFont(ofSize: 11)
+        statusDetailLabel.textColor = .secondaryLabelColor
+        statusDetailLabel.alignment = .center
+        statusDetailLabel.maximumNumberOfLines = 0
+        statusDetailLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusDetailLabel.widthAnchor.constraint(
+            lessThanOrEqualToConstant: Self.valueColumnWidth
+        ).isActive = true
+        statusDetailLabel.isHidden = true
+
+        configurePermissionValueLabel(microphoneStateLabel)
+        configurePermissionValueLabel(accessibilityStateLabel)
 
         statusProgressIndicator.isIndeterminate = false
         statusProgressIndicator.minValue = 0
@@ -108,14 +120,19 @@ final class SettingsViewController: NSViewController {
         statusProgressIndicator.style = .bar
         statusProgressIndicator.isDisplayedWhenStopped = false
         statusProgressIndicator.translatesAutoresizingMaskIntoConstraints = false
-        statusProgressIndicator.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        statusProgressIndicator.widthAnchor.constraint(equalToConstant: Self.progressWidth).isActive = true
         statusProgressIndicator.isHidden = true
 
         messageLabel.font = .systemFont(ofSize: 11)
         messageLabel.textColor = .systemRed
+        messageLabel.alignment = .center
         messageLabel.isHidden = true
         messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.maximumNumberOfLines = 0
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+        messageLabel.widthAnchor.constraint(
+            lessThanOrEqualToConstant: Self.valueColumnWidth
+        ).isActive = true
 
         recoveryReasonLabel.font = .systemFont(ofSize: 11)
         recoveryReasonLabel.textColor = .secondaryLabelColor
@@ -141,41 +158,28 @@ final class SettingsViewController: NSViewController {
         recoveryButtonRow.orientation = .horizontal
         recoveryButtonRow.spacing = 8
 
-        recoveryContainer.orientation = .vertical
-        recoveryContainer.alignment = .leading
-        recoveryContainer.spacing = 8
-        recoveryContainer.addArrangedSubview(makeSectionLabel("Transcript Recovery"))
-        recoveryContainer.addArrangedSubview(recoveryReasonLabel)
-        recoveryContainer.addArrangedSubview(recoveryScrollView)
-        recoveryContainer.addArrangedSubview(recoveryButtonRow)
+        configureRecoveryContainer(buttonRow: recoveryButtonRow)
         recoveryContainer.isHidden = true
 
-        stack.addArrangedSubview(triggerRow)
-        stack.addArrangedSubview(languageLabel)
-        stack.addArrangedSubview(englishRadio)
-        stack.addArrangedSubview(multilingualRadio)
-        stack.addArrangedSubview(permissionsSeparator)
-        stack.addArrangedSubview(permissionsLabel)
-        stack.addArrangedSubview(makePermissionRow(
-            title: "Microphone",
-            stateLabel: microphoneStateLabel,
-            actionButton: microphoneActionButton
-        ))
-        stack.addArrangedSubview(makePermissionRow(
-            title: "Input Monitoring",
-            stateLabel: inputMonitoringStateLabel,
-            actionButton: inputMonitoringActionButton
-        ))
-        stack.addArrangedSubview(makePermissionRow(
-            title: "Accessibility",
-            stateLabel: accessibilityStateLabel,
-            actionButton: accessibilityActionButton
-        ))
+        stack.addArrangedSubview(makeHeader())
+        stack.addArrangedSubview(makeSettingsGroup(rows: [
+            makeSettingsRow(title: "Trigger", trailingView: triggerRecorder),
+            makeSettingsRow(title: "Language", trailingView: languageControl),
+        ]))
+        stack.addArrangedSubview(makeSettingsGroup(rows: [
+            makePermissionRow(
+                title: "Microphone",
+                stateLabel: microphoneStateLabel,
+                actionButton: microphoneActionButton
+            ),
+            makePermissionRow(
+                title: "Accessibility",
+                stateLabel: accessibilityStateLabel,
+                actionButton: accessibilityActionButton
+            ),
+        ]))
         stack.addArrangedSubview(recoveryContainer)
-        stack.addArrangedSubview(modelSeparator)
-        stack.addArrangedSubview(statusLabel)
-        stack.addArrangedSubview(statusProgressIndicator)
-        stack.addArrangedSubview(messageLabel)
+        stack.addArrangedSubview(makeSettingsGroup(rows: [makeStatusGroup()]))
 
         self.view = stack
 
@@ -191,12 +195,14 @@ final class SettingsViewController: NSViewController {
         super.viewDidLoad()
         startStatusTask()
         startPermissionTask()
+        startPermissionRefreshTask()
         startPendingTranscriptTask()
     }
 
     deinit {
         statusTask?.cancel()
         permissionTask?.cancel()
+        permissionRefreshTask?.cancel()
         pendingTranscriptTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
@@ -207,15 +213,12 @@ final class SettingsViewController: NSViewController {
         }
     }
 
-    @objc private func languageChanged(_ sender: NSButton) {
+    @objc private func languageChanged(_ sender: NSSegmentedControl) {
         let previous = config
-        config.language = sender === englishRadio ? .english : .multilingual
-        englishRadio.state = config.language == .english ? .on : .off
-        multilingualRadio.state = config.language == .multilingual ? .on : .off
+        config.language = sender.selectedSegment == 0 ? .english : .multilingual
         persistConfig(orRollbackTo: previous) { [weak self] in
             guard let self else { return }
-            self.englishRadio.state = previous.language == .english ? .on : .off
-            self.multilingualRadio.state = previous.language == .multilingual ? .on : .off
+            self.languageControl.selectedSegment = previous.language == .english ? 0 : 1
         }
     }
 
@@ -245,21 +248,6 @@ final class SettingsViewController: NSViewController {
                 _ = await sttActor.promptAccessibilityPermission()
             case .denied:
                 Self.openPrivacySettings(anchor: "Privacy_Accessibility")
-            }
-        }
-    }
-
-    @objc private func inputMonitoringPermissionAction() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let permissions = await sttActor.currentPermissions
-            switch permissions.inputMonitoring {
-            case .granted:
-                break
-            case .notDetermined:
-                _ = await sttActor.promptInputMonitoringPermission()
-            case .denied:
-                Self.openPrivacySettings(anchor: "Privacy_ListenEvent")
             }
         }
     }
@@ -302,11 +290,13 @@ final class SettingsViewController: NSViewController {
     private func showMessage(_ message: String) {
         messageLabel.stringValue = message
         messageLabel.isHidden = false
+        resizeWindowToFitContent()
     }
 
     private func clearMessage() {
         messageLabel.stringValue = ""
         messageLabel.isHidden = true
+        resizeWindowToFitContent()
     }
 
     // MARK: - State Tasks
@@ -337,6 +327,21 @@ final class SettingsViewController: NSViewController {
         }
     }
 
+    private func startPermissionRefreshTask() {
+        permissionRefreshTask?.cancel()
+        permissionRefreshTask = Task { @MainActor [weak self, sttActor] in
+            while !Task.isCancelled {
+                let permissions = await sttActor.refreshPermissionState()
+                self?.applyPermissions(permissions)
+
+                let interval = permissions.requiresAttention
+                    ? Self.activePermissionRefreshInterval
+                    : Self.idlePermissionRefreshInterval
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
     private func startPendingTranscriptTask() {
         pendingTranscriptTask?.cancel()
         pendingTranscriptTask = Task { @MainActor [weak self, sttActor] in
@@ -353,53 +358,98 @@ final class SettingsViewController: NSViewController {
     // MARK: - State Rendering
 
     private func applyStatus(_ status: SttStatus) {
-        let presentation = status.presentation
-        if let detail = presentation.detail, !detail.isEmpty {
-            statusLabel.stringValue = "Status: \(presentation.title) — \(detail)"
-        } else {
-            statusLabel.stringValue = "Status: \(presentation.title)"
-        }
-        statusLabel.textColor = presentation.isError ? .systemRed : .labelColor
+        currentStatus = status
+        renderSystemStatus()
+    }
 
+    private func applyPermissions(_ permissions: PermissionSnapshot) {
+        currentPermissions = permissions
+        updatePermissionRow(
+            state: permissions.microphone,
+            stateLabel: microphoneStateLabel,
+            actionButton: microphoneActionButton
+        )
+        updatePermissionRow(
+            state: permissions.accessibility,
+            stateLabel: accessibilityStateLabel,
+            actionButton: accessibilityActionButton
+        )
+        renderSystemStatus()
+    }
+
+    private func renderSystemStatus() {
+        statusProgressIndicator.stopAnimation(nil)
+        statusProgressIndicator.doubleValue = 0
+        statusProgressIndicator.isHidden = true
+        statusLabel.isHidden = false
+        statusDetailLabel.stringValue = ""
+        statusDetailLabel.isHidden = true
+
+        let presentation = currentStatus.presentation
         if presentation.showsProgress {
+            statusLabel.isHidden = true
+            statusDetailLabel.stringValue = presentation.detail ?? presentation.title
+            statusDetailLabel.textColor = .secondaryLabelColor
+            statusDetailLabel.isHidden = false
             statusProgressIndicator.isHidden = false
             statusProgressIndicator.isIndeterminate = presentation.isProgressIndeterminate
             if presentation.isProgressIndeterminate {
                 statusProgressIndicator.startAnimation(nil)
             } else {
-                statusProgressIndicator.stopAnimation(nil)
                 statusProgressIndicator.doubleValue = Double(presentation.progressPercent ?? 0)
             }
-        } else {
-            statusProgressIndicator.stopAnimation(nil)
-            statusProgressIndicator.doubleValue = 0
-            statusProgressIndicator.isHidden = true
+            resizeWindowToFitContent()
+            return
         }
+
+        if presentation.isError {
+            statusLabel.stringValue = presentation.title
+            statusLabel.textColor = .systemRed
+            if let detail = presentation.detail, !detail.isEmpty {
+                statusDetailLabel.stringValue = detail
+                statusDetailLabel.textColor = .systemRed
+                statusDetailLabel.isHidden = false
+            }
+            resizeWindowToFitContent()
+            return
+        }
+
+        guard currentStatus.canStartCapture else {
+            statusLabel.stringValue = "Not Ready"
+            statusLabel.textColor = .secondaryLabelColor
+            if let detail = presentation.detail, !detail.isEmpty {
+                statusDetailLabel.stringValue = detail
+                statusDetailLabel.textColor = .secondaryLabelColor
+                statusDetailLabel.isHidden = false
+            }
+            resizeWindowToFitContent()
+            return
+        }
+
+        guard currentPermissions.allGranted else {
+            statusLabel.stringValue = "Needs Permissions"
+            statusLabel.textColor = .systemOrange
+            statusDetailLabel.stringValue = missingPermissionSummary(currentPermissions)
+            statusDetailLabel.textColor = .secondaryLabelColor
+            statusDetailLabel.isHidden = false
+            resizeWindowToFitContent()
+            return
+        }
+
+        statusLabel.stringValue = "Ready"
+        statusLabel.textColor = .systemGreen
+        resizeWindowToFitContent()
     }
 
-    private func applyPermissions(_ permissions: PermissionSnapshot) {
-        microphoneStateLabel.stringValue = permissions.microphone.displayName
-        inputMonitoringStateLabel.stringValue = permissions.inputMonitoring.displayName
-        accessibilityStateLabel.stringValue = permissions.accessibility.displayName
-
-        updatePermissionButton(
-            microphoneActionButton,
-            state: permissions.microphone,
-            requestTitle: "Request",
-            settingsTitle: "Open Settings"
-        )
-        updatePermissionButton(
-            inputMonitoringActionButton,
-            state: permissions.inputMonitoring,
-            requestTitle: "Request",
-            settingsTitle: "Open Settings"
-        )
-        updatePermissionButton(
-            accessibilityActionButton,
-            state: permissions.accessibility,
-            requestTitle: "Request",
-            settingsTitle: "Open Settings"
-        )
+    private func missingPermissionSummary(_ permissions: PermissionSnapshot) -> String {
+        var missing = [String]()
+        if permissions.microphone != .granted {
+            missing.append("Microphone")
+        }
+        if permissions.accessibility != .granted {
+            missing.append("Accessibility")
+        }
+        return missing.joined(separator: ", ")
     }
 
     private func applyPendingTranscript(_ pendingTranscript: PendingTranscript?) {
@@ -415,57 +465,313 @@ final class SettingsViewController: NSViewController {
         recoveryContainer.isHidden = false
     }
 
-    private func updatePermissionButton(
-        _ button: NSButton,
+    private func updatePermissionRow(
         state: PermissionState,
-        requestTitle: String,
-        settingsTitle: String
+        stateLabel: NSTextField,
+        actionButton: NSButton
     ) {
+        stateLabel.stringValue = state.displayName
+        stateLabel.textColor = permissionStateTextColor(state)
+
         switch state {
         case .granted:
-            button.isHidden = true
+            actionButton.title = ""
+            actionButton.isEnabled = false
+            actionButton.isHidden = true
+            actionButton.isTransparent = true
         case .notDetermined:
-            button.title = requestTitle
-            button.isHidden = false
+            actionButton.title = "Allow"
+            actionButton.isEnabled = true
+            actionButton.isHidden = false
+            actionButton.isTransparent = false
         case .denied:
-            button.title = settingsTitle
-            button.isHidden = false
+            actionButton.title = "Settings…"
+            actionButton.isEnabled = true
+            actionButton.isHidden = false
+            actionButton.isTransparent = false
         }
     }
 
     // MARK: - View Helpers
 
-    private func configureMetadataLabel(_ label: NSTextField) {
-        label.font = .systemFont(ofSize: 11)
+    private func configurePermissionValueLabel(_ label: NSTextField) {
+        label.font = .labelFont(ofSize: 12)
         label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(equalToConstant: 94).isActive = true
+        label.setContentHuggingPriority(.required, for: .horizontal)
     }
 
-    private func makeSectionLabel(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        return label
+    private func makeHeader() -> NSView {
+        let titleLabel = NSTextField(labelWithString: "Settings")
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textColor = .labelColor
+
+        let header = NSStackView(views: [
+            makeHeaderIconView(),
+            titleLabel,
+        ])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 10
+        header.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.widthAnchor.constraint(equalToConstant: Self.groupWidth).isActive = true
+        return header
+    }
+
+    private func makeSettingsGroup(rows: [NSView]) -> NSBox {
+        let group = NSBox()
+        group.boxType = .custom
+        group.borderWidth = 0
+        group.cornerRadius = 8
+        group.fillColor = .controlBackgroundColor
+        group.contentViewMargins = NSSize(width: 0, height: 0)
+        group.translatesAutoresizingMaskIntoConstraints = false
+        group.widthAnchor.constraint(equalToConstant: Self.groupWidth).isActive = true
+
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.alignment = .width
+        content.spacing = 0
+        content.translatesAutoresizingMaskIntoConstraints = false
+
+        for (index, row) in rows.enumerated() {
+            content.addArrangedSubview(row)
+            if index < rows.count - 1 {
+                content.addArrangedSubview(makeSeparator())
+            }
+        }
+
+        group.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: group.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: group.trailingAnchor),
+            content.topAnchor.constraint(equalTo: group.topAnchor),
+            content.bottomAnchor.constraint(equalTo: group.bottomAnchor),
+        ])
+
+        return group
+    }
+
+    private func makeSettingsRow(
+        title: String,
+        trailingView: NSView
+    ) -> NSStackView {
+        let titleLabel = makeRowTitleLabel(title)
+        let spacer = flexibleSpacer()
+
+        trailingView.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        trailingView.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+
+        let row = NSStackView(views: [
+            titleLabel,
+            spacer,
+            makeValueColumn(trailingView),
+        ])
+        configureRow(row)
+        return row
     }
 
     private func makePermissionRow(
         title: String,
         stateLabel: NSTextField,
         actionButton: NSButton
-    ) -> NSView {
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+    ) -> NSStackView {
+        configurePermissionButton(actionButton)
 
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [
+            makeRowTitleLabel(title),
+            flexibleSpacer(),
+            makeValueColumn(makePermissionValueView(stateLabel: stateLabel, actionButton: actionButton)),
+        ])
+        configureRow(row)
+        return row
+    }
 
-        actionButton.setContentHuggingPriority(.required, for: .horizontal)
+    private func makeStatusGroup() -> NSView {
+        statusValueStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        statusValueStack.addArrangedSubview(statusLabel)
+        statusValueStack.addArrangedSubview(statusProgressIndicator)
+        statusValueStack.addArrangedSubview(statusDetailLabel)
+        statusValueStack.addArrangedSubview(messageLabel)
+        statusValueStack.orientation = .vertical
+        statusValueStack.alignment = .trailing
+        statusValueStack.spacing = 4
+        statusValueStack.translatesAutoresizingMaskIntoConstraints = false
+        statusValueStack.widthAnchor.constraint(equalToConstant: Self.valueColumnWidth).isActive = true
+        renderSystemStatus()
 
-        let row = NSStackView(views: [titleLabel, spacer, stateLabel, actionButton])
+        return makeSettingsRow(
+            title: "Model",
+            trailingView: statusValueStack
+        )
+    }
+
+    private func configureRecoveryContainer(buttonRow: NSStackView) {
+        let recoveryContent = NSStackView(views: [
+            recoveryReasonLabel,
+            recoveryScrollView,
+            buttonRow,
+        ])
+        recoveryContent.orientation = .vertical
+        recoveryContent.alignment = .width
+        recoveryContent.spacing = 8
+        recoveryContent.edgeInsets = NSEdgeInsets(
+            top: 12,
+            left: Self.rowHorizontalInset,
+            bottom: 12,
+            right: Self.rowHorizontalInset
+        )
+
+        recoveryContainer.orientation = .vertical
+        recoveryContainer.alignment = .width
+        recoveryContainer.spacing = 0
+        recoveryContainer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        recoveryContainer.addArrangedSubview(makeSettingsGroup(rows: [recoveryContent]))
+    }
+
+    private func configureRow(_ row: NSStackView) {
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 8
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        return row
+        row.spacing = 10
+        row.edgeInsets = NSEdgeInsets(
+            top: 8,
+            left: Self.rowHorizontalInset,
+            bottom: 8,
+            right: Self.rowHorizontalInset
+        )
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
+    }
+
+    private func makeRowTitleLabel(_ title: String) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.font = .labelFont(ofSize: 13)
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(equalToConstant: Self.labelColumnWidth).isActive = true
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }
+
+    private func makePermissionValueView(stateLabel: NSTextField, actionButton: NSButton) -> NSStackView {
+        let valueView = NSStackView(views: [stateLabel, actionButton])
+        valueView.orientation = .horizontal
+        valueView.alignment = .centerY
+        valueView.spacing = 8
+        return valueView
+    }
+
+    private func makeValueColumn(_ contentView: NSView) -> NSView {
+        let column = NSView()
+        column.translatesAutoresizingMaskIntoConstraints = false
+        column.widthAnchor.constraint(equalToConstant: Self.valueColumnWidth).isActive = true
+
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        column.addSubview(contentView)
+        NSLayoutConstraint.activate([
+            contentView.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            contentView.centerYAnchor.constraint(equalTo: column.centerYAnchor),
+            contentView.leadingAnchor.constraint(greaterThanOrEqualTo: column.leadingAnchor),
+        ])
+
+        return column
+    }
+
+    private func makeHeaderIconView() -> NSImageView {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        let image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        let imageView = NSImageView(image: image ?? NSImage(size: NSSize(width: Self.headerIconWidth, height: Self.headerIconWidth)))
+        imageView.contentTintColor = .controlAccentColor
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.widthAnchor.constraint(equalToConstant: Self.headerIconWidth).isActive = true
+        imageView.heightAnchor.constraint(equalToConstant: Self.headerIconWidth).isActive = true
+        return imageView
+    }
+
+    private func makeSeparator() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 1).isActive = true
+
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            separator.leadingAnchor.constraint(
+                equalTo: container.leadingAnchor,
+                constant: Self.rowHorizontalInset
+            ),
+            separator.trailingAnchor.constraint(
+                equalTo: container.trailingAnchor,
+                constant: -Self.rowHorizontalInset
+            ),
+            separator.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+
+        return container
+    }
+
+    private func flexibleSpacer() -> NSView {
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return spacer
+    }
+
+    private func configurePermissionButton(_ actionButton: NSButton) {
+        actionButton.title = "Allow"
+        actionButton.font = .labelFont(ofSize: 12)
+        actionButton.bezelStyle = .rounded
+        actionButton.controlSize = .small
+        actionButton.translatesAutoresizingMaskIntoConstraints = false
+        actionButton.widthAnchor.constraint(equalToConstant: 82).isActive = true
+        actionButton.setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    private func permissionStateTextColor(_ state: PermissionState) -> NSColor {
+        switch state {
+        case .granted:
+            .labelColor
+        case .notDetermined:
+            .secondaryLabelColor
+        case .denied:
+            .systemRed
+        }
+    }
+
+    private func resizeWindowToFitContent() {
+        guard isViewLoaded, let window = view.window else { return }
+
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+
+        let fittingHeight = ceil(view.fittingSize.height)
+        guard fittingHeight > 0 else { return }
+
+        let currentContentHeight = window.contentView?.bounds.height ?? 0
+        guard abs(currentContentHeight - fittingHeight) > 1 else { return }
+
+        let currentFrame = window.frame
+        var targetFrame = window.frameRect(
+            forContentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: Self.contentWidth,
+                height: fittingHeight
+            )
+        )
+        targetFrame.origin.x = currentFrame.origin.x
+        targetFrame.origin.y = currentFrame.maxY - targetFrame.height
+        window.setFrame(targetFrame, display: true)
     }
 
     private static func openPrivacySettings(anchor: String) {

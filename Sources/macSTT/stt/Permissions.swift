@@ -17,12 +17,10 @@ enum PermissionState: String, Sendable, Equatable {
 
 struct PermissionSnapshot: Sendable, Equatable {
     var microphone: PermissionState
-    var inputMonitoring: PermissionState
     var accessibility: PermissionState
 
     var allGranted: Bool {
         microphone == .granted &&
-        inputMonitoring == .granted &&
         accessibility == .granted
     }
 

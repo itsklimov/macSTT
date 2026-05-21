@@ -33,6 +33,7 @@ DMG_BACKGROUND_SIZE = [640, 380].freeze
 APP_ICONSET_PATH = File.join(ROOT, "Sources", "macSTT", "Assets.xcassets", "AppIcon.appiconset")
 APP_ICON_FILENAME = "AppIcon.icns"
 OFFICIAL_SPARKLE_FEED_URL = "#{RELEASES_PAGES_URL}/appcast.xml"
+OFFICIAL_SPARKLE_PUBLIC_ED_KEY = "AcxJfyebrquKgzgD5YXIC8fq7ARRKDHrRBWWDuR8X4A="
 SPARKLE_KEYCHAIN_SERVICE = "https://sparkle-project.org"
 SPARKLE_KEYCHAIN_ACCOUNT = "ed25519"
 
@@ -99,7 +100,7 @@ def build_xcargs(enable_sparkle:)
 
   if enable_sparkle
     public_key = ENV["SPARKLE_PUBLIC_ED_KEY"].to_s.strip
-    UI.user_error!("SPARKLE_PUBLIC_ED_KEY not set") if public_key.empty?
+    public_key = OFFICIAL_SPARKLE_PUBLIC_ED_KEY if public_key.empty?
 
     arguments << "ENABLE_SPARKLE=YES"
     arguments << "SPARKLE_FEED_URL=#{OFFICIAL_SPARKLE_FEED_URL.shellescape}"
@@ -111,6 +112,28 @@ def build_xcargs(enable_sparkle:)
   end
 
   arguments.join(" ")
+end
+
+def release_notes_file
+  path = ENV["RELEASE_NOTES_FILE"].to_s.strip
+  return nil if path.empty?
+
+  expanded_path = File.expand_path(path, ROOT)
+  UI.user_error!("RELEASE_NOTES_FILE not found: #{expanded_path}") unless File.file?(expanded_path)
+  expanded_path
+end
+
+def create_github_release(tag, dmg_path, latest_dmg_path)
+  notes_file = release_notes_file
+  arguments = ["release", "create", tag, dmg_path, latest_dmg_path, "--repo", RELEASES_REPO, "--title", tag]
+
+  if notes_file
+    arguments += ["--notes-file", notes_file]
+  else
+    arguments << "--generate-notes"
+  end
+
+  sh("gh", *arguments)
 end
 
 def sparkle_keychain_present?
@@ -623,7 +646,7 @@ platform :mac do
     sh("cd #{ROOT} && git push && git push --tags")
 
     # Upload release assets to the public repo
-    sh("gh", "release", "create", tag, dmg_path, latest_dmg_path, "--repo", RELEASES_REPO, "--title", tag, "--generate-notes")
+    create_github_release(tag, dmg_path, latest_dmg_path)
 
     # Push appcast to the public repo without polluting the source branch
     sh("gh repo clone #{RELEASES_REPO} #{releases_dir} -- --depth 1")
