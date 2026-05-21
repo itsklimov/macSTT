@@ -2,6 +2,10 @@
 
 `macSTT` is a macOS-native speech-to-text app for dictation. It listens for a configured trigger, captures microphone audio, runs local speech-to-text, and types the final transcript at the current cursor location.
 
+<p align="center">
+  <img src=".github/assets/macstt-settings.jpg" alt="macSTT settings window" width="437">
+</p>
+
 ## Why It Matters
 
 - Native macOS app instead of a browser-based dictation flow
